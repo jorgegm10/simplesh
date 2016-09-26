@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>simplesh.c</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>simplesh.c</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-1">&#182;</a>
+              </div>
+              <p>Shell <code>simplesh</code></p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;stdlib.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;sys/types.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;sys/wait.h&gt;</span></span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-2">&#182;</a>
+              </div>
+              <p>Libreadline</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;readline/readline.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">include</span> <span class="hljs-meta-string">&lt;readline/history.h&gt;</span></span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-3">&#182;</a>
+              </div>
+              <p>Tipos presentes en la estructura <code>cmd</code>, campo <code>type</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> EXEC  1</span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> REDIR 2</span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> PIPE  3</span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> LIST  4</span>
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> BACK  5</span>
+
+<span class="hljs-meta">#<span class="hljs-meta-keyword">define</span> MAXARGS 15</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-4">&#182;</a>
+              </div>
+              <h2 id="estructuras">Estructuras</h2>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-5">&#182;</a>
+              </div>
+              
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-6">&#182;</a>
+              </div>
+              <p>La estructura <code>cmd</code> se utiliza para almacenar la información que
+servirá al shell para guardar la información necesaria para
+ejecutar las diferentes tipos de órdenes (tuberías, redirecciones,
+etc.)</p>
+<p>El formato es el siguiente:</p>
+<pre><code>|----------+--------------+--------------|
+| (<span class="hljs-number">1</span> byte) | ...          | ...          |
+|----------+--------------+--------------|
+| type     | otros campos | otros campos |
+|----------+--------------+--------------|
+</code></pre><p>Nótese cómo las estructuras <code>cmd</code> comparten el primer campo <code>type</code>
+para identificar el tipo de la estructura, y luego se obtendrá un
+tipo derivado a través de <em>casting</em> forzado de tipo. Se obtiene así
+un polimorfismo básico en C.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">struct</span> cmd {
+    <span class="hljs-keyword">int</span> type;
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-7">&#182;</a>
+              </div>
+              <p>Ejecución de un comando con sus parámetros</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">struct</span> execcmd {
+    <span class="hljs-keyword">int</span> type;
+    <span class="hljs-keyword">char</span> * argv[MAXARGS];
+    <span class="hljs-keyword">char</span> * eargv[MAXARGS];
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-8">&#182;</a>
+              </div>
+              <p>Ejecución de un comando de redirección</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">struct</span> redircmd {
+    <span class="hljs-keyword">int</span> type;
+    <span class="hljs-keyword">struct</span> cmd *cmd;
+    <span class="hljs-keyword">char</span> *file;
+    <span class="hljs-keyword">char</span> *efile;
+    <span class="hljs-keyword">int</span> mode;
+    <span class="hljs-keyword">int</span> fd;
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-9">&#182;</a>
+              </div>
+              <p>Ejecución de un comando de tubería</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">struct</span> pipecmd {
+    <span class="hljs-keyword">int</span> type;
+    <span class="hljs-keyword">struct</span> cmd *left;
+    <span class="hljs-keyword">struct</span> cmd *right;
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-10">&#182;</a>
+              </div>
+              <p>Lista de órdenes</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">struct</span> listcmd {
+    <span class="hljs-keyword">int</span> type;
+    <span class="hljs-keyword">struct</span> cmd *left;
+    <span class="hljs-keyword">struct</span> cmd *right;
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-11">&#182;</a>
+              </div>
+              <p>Tarea en segundo plano (background) con <code>&amp;</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">struct</span> backcmd {
+    <span class="hljs-keyword">int</span> type;
+    <span class="hljs-keyword">struct</span> cmd *cmd;
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-12">&#182;</a>
+              </div>
+              <p>Declaración de funciones necesarias</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">int</span> <span class="hljs-title">fork1</span><span class="hljs-params">(<span class="hljs-keyword">void</span>)</span></span>;  <span class="hljs-comment">// Fork but panics on failure.</span>
+<span class="hljs-function"><span class="hljs-keyword">void</span> <span class="hljs-title">panic</span><span class="hljs-params">(<span class="hljs-keyword">char</span>*)</span></span>;
+<span class="hljs-function"><span class="hljs-keyword">struct</span> cmd *<span class="hljs-title">parse_cmd</span><span class="hljs-params">(<span class="hljs-keyword">char</span>*)</span></span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-13">&#182;</a>
+              </div>
+              <p>Ejecuta un <code>cmd</code>. Nunca retorna, ya que siempre se ejecuta en un
+hijo lanzado con <code>fork()</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">void</span>
+<span class="hljs-title">run_cmd</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *cmd)</span>
+</span>{
+    <span class="hljs-keyword">int</span> p[<span class="hljs-number">2</span>];
+    <span class="hljs-keyword">struct</span> backcmd *bcmd;
+    <span class="hljs-keyword">struct</span> execcmd *ecmd;
+    <span class="hljs-keyword">struct</span> listcmd *lcmd;
+    <span class="hljs-keyword">struct</span> pipecmd *pcmd;
+    <span class="hljs-keyword">struct</span> redircmd *rcmd;
+
+    <span class="hljs-keyword">if</span>(cmd == <span class="hljs-number">0</span>)
+        <span class="hljs-built_in">exit</span>(<span class="hljs-number">0</span>);
+
+    <span class="hljs-keyword">switch</span>(cmd-&gt;type)
+    {
+    <span class="hljs-keyword">default</span>:
+        panic(<span class="hljs-string">"run_cmd"</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-14">&#182;</a>
+              </div>
+              <p>Ejecución de una única orden.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">case</span> EXEC:
+        ecmd = (<span class="hljs-keyword">struct</span> execcmd*)cmd;
+        <span class="hljs-keyword">if</span> (ecmd-&gt;argv[<span class="hljs-number">0</span>] == <span class="hljs-number">0</span>)
+            <span class="hljs-built_in">exit</span>(<span class="hljs-number">0</span>);
+        execvp(ecmd-&gt;argv[<span class="hljs-number">0</span>], ecmd-&gt;argv);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-15">&#182;</a>
+              </div>
+              <p>Si se llega aquí algo falló</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">"exec %s failed\n"</span>, ecmd-&gt;argv[<span class="hljs-number">0</span>]);
+        <span class="hljs-built_in">exit</span> (<span class="hljs-number">1</span>);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> REDIR:
+        rcmd = (<span class="hljs-keyword">struct</span> redircmd*)cmd;
+        close(rcmd-&gt;fd);
+        <span class="hljs-keyword">if</span> (open(rcmd-&gt;file, rcmd-&gt;mode) &lt; <span class="hljs-number">0</span>)
+        {
+            <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">"open %s failed\n"</span>, rcmd-&gt;file);
+            <span class="hljs-built_in">exit</span>(<span class="hljs-number">1</span>);
+        }
+        run_cmd(rcmd-&gt;cmd);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> LIST:
+        lcmd = (<span class="hljs-keyword">struct</span> listcmd*)cmd;
+        <span class="hljs-keyword">if</span> (fork1() == <span class="hljs-number">0</span>)
+            run_cmd(lcmd-&gt;left);
+        wait(<span class="hljs-literal">NULL</span>);
+        run_cmd(lcmd-&gt;right);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> PIPE:
+        pcmd = (<span class="hljs-keyword">struct</span> pipecmd*)cmd;
+        <span class="hljs-keyword">if</span> (pipe(p) &lt; <span class="hljs-number">0</span>)
+            panic(<span class="hljs-string">"pipe"</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-16">&#182;</a>
+              </div>
+              <p>Ejecución del hijo de la izquierda</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-keyword">if</span> (fork1() == <span class="hljs-number">0</span>)
+        {
+            close(<span class="hljs-number">1</span>);
+            dup(p[<span class="hljs-number">1</span>]);
+            close(p[<span class="hljs-number">0</span>]);
+            close(p[<span class="hljs-number">1</span>]);
+            run_cmd(pcmd-&gt;left);
+        }</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-17">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-17">&#182;</a>
+              </div>
+              <p>Ejecución del hijo de la derecha</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-keyword">if</span> (fork1() == <span class="hljs-number">0</span>)
+        {
+            close(<span class="hljs-number">0</span>);
+            dup(p[<span class="hljs-number">0</span>]);
+            close(p[<span class="hljs-number">0</span>]);
+            close(p[<span class="hljs-number">1</span>]);
+            run_cmd(pcmd-&gt;right);
+        }
+        close(p[<span class="hljs-number">0</span>]);
+        close(p[<span class="hljs-number">1</span>]);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-18">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-18">&#182;</a>
+              </div>
+              <p>Esperar a ambos hijos</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        wait(<span class="hljs-literal">NULL</span>);
+        wait(<span class="hljs-literal">NULL</span>);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> BACK:
+        bcmd = (<span class="hljs-keyword">struct</span> backcmd*)cmd;
+        <span class="hljs-keyword">if</span> (fork1() == <span class="hljs-number">0</span>)
+            run_cmd(bcmd-&gt;cmd);
+        <span class="hljs-keyword">break</span>;
+    }</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-19">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-19">&#182;</a>
+              </div>
+              <p>Salida normal, código 0.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-built_in">exit</span>(<span class="hljs-number">0</span>);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-20">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-20">&#182;</a>
+              </div>
+              <p>Muestra un <em>prompt</em> y lee lo que el usuario escribe usando la
+librería readline. Ésta permite almacenar en el historial, utilizar
+las flechas para acceder a las órdenes previas, búsquedas de
+órdenes, etc.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">char</span>*
+<span class="hljs-title">getcmd</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">char</span> *buf;
+    <span class="hljs-keyword">int</span> retval = <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-21">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-21">&#182;</a>
+              </div>
+              <p>Lee la entrada del usuario</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    buf = readline (<span class="hljs-string">"$ "</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-22">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-22">&#182;</a>
+              </div>
+              <p>Si el usuario ha escrito algo, almacenarlo en la historia.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">if</span>(buf)
+        add_history (buf);
+
+    <span class="hljs-keyword">return</span> buf;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-23">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-23">&#182;</a>
+              </div>
+              <h2 id="funci-n-main-">Función <code>main()</code>.</h2>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-24">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-24">&#182;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-function"><span class="hljs-keyword">int</span>
+<span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-keyword">void</span>)</span>
+</span>{
+    <span class="hljs-keyword">char</span>* buf;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-25">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-25">&#182;</a>
+              </div>
+              <p>Bucle de lectura y ejecución de órdenes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">while</span> (<span class="hljs-literal">NULL</span> != (buf = getcmd()))
+    {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-26">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-26">&#182;</a>
+              </div>
+              <p>Crear siempre un hijo para ejecutar el comando leído</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-keyword">if</span>(fork1() == <span class="hljs-number">0</span>)
+            run_cmd(parse_cmd(buf));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-27">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-27">&#182;</a>
+              </div>
+              <p>Esperar al hijo creado</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        wait(<span class="hljs-literal">NULL</span>);
+
+        <span class="hljs-built_in">free</span> ((<span class="hljs-keyword">void</span>*)buf);
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-function"><span class="hljs-keyword">void</span>
+<span class="hljs-title">panic</span><span class="hljs-params">(<span class="hljs-keyword">char</span> *s)</span>
+</span>{
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">"%s\n"</span>, s);
+    <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-28">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-28">&#182;</a>
+              </div>
+              <p>Como <code>fork()</code> salvo que muestra un mensaje de error si no se puede
+crear el hijo.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">int</span>
+<span class="hljs-title">fork1</span><span class="hljs-params">(<span class="hljs-keyword">void</span>)</span>
+</span>{
+    <span class="hljs-keyword">int</span> pid;
+
+    pid = fork();
+    <span class="hljs-keyword">if</span>(pid == <span class="hljs-number">-1</span>)
+        panic(<span class="hljs-string">"fork"</span>);
+    <span class="hljs-keyword">return</span> pid;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-29">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-29">&#182;</a>
+              </div>
+              <h2 id="constructores-de-las-estructuras-cmd-">Constructores de las estructuras <code>cmd</code>.</h2>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-30">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-30">&#182;</a>
+              </div>
+              
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-31">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-31">&#182;</a>
+              </div>
+              <p>Construye una estructura <code>EXEC</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">execcmd</span><span class="hljs-params">(<span class="hljs-keyword">void</span>)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> execcmd *cmd;
+
+    cmd = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*cmd));
+    <span class="hljs-built_in">memset</span>(cmd, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*cmd));
+    cmd-&gt;type = EXEC;
+    <span class="hljs-keyword">return</span> (<span class="hljs-keyword">struct</span> cmd*)cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-32">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-32">&#182;</a>
+              </div>
+              <p>Construye una estructura de redirección.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">redircmd</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *subcmd, <span class="hljs-keyword">char</span> *file, <span class="hljs-keyword">char</span> *efile, <span class="hljs-keyword">int</span> mode, <span class="hljs-keyword">int</span> fd)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> redircmd *cmd;
+
+    cmd = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*cmd));
+    <span class="hljs-built_in">memset</span>(cmd, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*cmd));
+    cmd-&gt;type = REDIR;
+    cmd-&gt;cmd = subcmd;
+    cmd-&gt;file = file;
+    cmd-&gt;efile = efile;
+    cmd-&gt;mode = mode;
+    cmd-&gt;fd = fd;
+    <span class="hljs-keyword">return</span> (<span class="hljs-keyword">struct</span> cmd*)cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-33">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-33">&#182;</a>
+              </div>
+              <p>Construye una estructura de tubería (<em>pipe</em>).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">pipecmd</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *left, <span class="hljs-keyword">struct</span> cmd *right)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> pipecmd *cmd;
+
+    cmd = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*cmd));
+    <span class="hljs-built_in">memset</span>(cmd, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*cmd));
+    cmd-&gt;type = PIPE;
+    cmd-&gt;left = left;
+    cmd-&gt;right = right;
+    <span class="hljs-keyword">return</span> (<span class="hljs-keyword">struct</span> cmd*)cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-34">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-34">&#182;</a>
+              </div>
+              <p>Construye una estructura de lista de órdenes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">listcmd</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *left, <span class="hljs-keyword">struct</span> cmd *right)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> listcmd *cmd;
+
+    cmd = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*cmd));
+    <span class="hljs-built_in">memset</span>(cmd, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*cmd));
+    cmd-&gt;type = LIST;
+    cmd-&gt;left = left;
+    cmd-&gt;right = right;
+    <span class="hljs-keyword">return</span> (<span class="hljs-keyword">struct</span> cmd*)cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-35">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-35">&#182;</a>
+              </div>
+              <p>Construye una estructura de ejecución que incluye una ejecución en
+segundo plano.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">backcmd</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *subcmd)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> backcmd *cmd;
+
+    cmd = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*cmd));
+    <span class="hljs-built_in">memset</span>(cmd, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*cmd));
+    cmd-&gt;type = BACK;
+    cmd-&gt;cmd = subcmd;
+    <span class="hljs-keyword">return</span> (<span class="hljs-keyword">struct</span> cmd*)cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-36">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-36">&#182;</a>
+              </div>
+              <h2 id="parsing">Parsing</h2>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-37">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-37">&#182;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span> whitespace[] = <span class="hljs-string">" \t\r\n\v"</span>;
+<span class="hljs-keyword">const</span> <span class="hljs-keyword">char</span> symbols[] = <span class="hljs-string">"&lt;|&gt;&amp;;()"</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-38">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-38">&#182;</a>
+              </div>
+              <p>Obtiene un <em>token</em> de la cadena de entrada <code>ps</code>, y hace que <code>q</code> apunte a
+él (si no es <code>NULL</code>).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">int</span>
+<span class="hljs-title">gettoken</span><span class="hljs-params">(<span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str, <span class="hljs-keyword">char</span> **q, <span class="hljs-keyword">char</span> **eq)</span>
+</span>{
+    <span class="hljs-keyword">char</span> *s;
+    <span class="hljs-keyword">int</span> ret;
+
+    s = *ps;
+    <span class="hljs-keyword">while</span> (s &lt; end_of_str &amp;&amp; <span class="hljs-built_in">strchr</span>(whitespace, *s))
+        s++;
+    <span class="hljs-keyword">if</span> (q)
+        *q = s;
+    ret = *s;
+    <span class="hljs-keyword">switch</span> (*s)
+    {
+    <span class="hljs-keyword">case</span> <span class="hljs-number">0</span>:
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> <span class="hljs-string">'|'</span>:
+    <span class="hljs-keyword">case</span> <span class="hljs-string">'('</span>:
+    <span class="hljs-keyword">case</span> <span class="hljs-string">')'</span>:
+    <span class="hljs-keyword">case</span> <span class="hljs-string">';'</span>:
+    <span class="hljs-keyword">case</span> <span class="hljs-string">'&amp;'</span>:
+    <span class="hljs-keyword">case</span> <span class="hljs-string">'&lt;'</span>:
+        s++;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> <span class="hljs-string">'&gt;'</span>:
+        s++;
+        <span class="hljs-keyword">if</span> (*s == <span class="hljs-string">'&gt;'</span>)
+        {
+            ret = <span class="hljs-string">'+'</span>;
+            s++;
+        }
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">default</span>:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-39">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-39">&#182;</a>
+              </div>
+              <p>El caso por defecto (no hay caracteres especiales) es el de un
+argumento de programa. Se retorna el valor <code>&#39;a&#39;</code>, <code>q</code> apunta al
+mismo (si no era <code>NULL</code>), y <code>ps</code> se avanza hasta que salta todos
+los espacios <strong>después</strong> del argumento. <code>eq</code> se hace apuntar a
+donde termina el argumento. Así, si <code>ret</code> es <code>&#39;a&#39;</code>:</p>
+<pre><code>|-----------+---+---+---+---+---+---+---+---+---+-----------|
+| (espacio) | a | r | g | u | m | e | n | t | o | (espacio) |
+|-----------+---+---+---+---+---+---+---+---+---+-----------|
+              ^                                   ^
+              |q                                  |eq
+</code></pre>
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        ret = <span class="hljs-string">'a'</span>;
+        <span class="hljs-keyword">while</span> (s &lt; end_of_str &amp;&amp; !<span class="hljs-built_in">strchr</span>(whitespace, *s) &amp;&amp; !<span class="hljs-built_in">strchr</span>(symbols, *s))
+            s++;
+        <span class="hljs-keyword">break</span>;
+    }</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-40">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-40">&#182;</a>
+              </div>
+              <p>Apuntar <code>eq</code> (si no es <code>NULL</code>) al final del argumento.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">if</span> (eq)
+        *eq = s;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-41">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-41">&#182;</a>
+              </div>
+              <p>Y finalmente saltar los espacios en blanco y actualizar <code>ps</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">while</span>(s &lt; end_of_str &amp;&amp; <span class="hljs-built_in">strchr</span>(whitespace, *s))
+        s++;
+    *ps = s;
+
+    <span class="hljs-keyword">return</span> ret;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-42">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-42">&#182;</a>
+              </div>
+              <p>La función <code>peek()</code> recibe un puntero a una cadena, <code>ps</code>, y un final de
+cadena, <code>end_of_str</code>, y un conjunto de tokens (<code>toks</code>). El puntero
+pasado, <code>ps</code>, es llevado hasta el primer carácter que no es un espacio y
+posicionado ahí. La función retorna distinto de <code>NULL</code> si encuentra el
+conjunto de caracteres pasado en <code>toks</code> justo después de los posibles
+espacios.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">int</span>
+<span class="hljs-title">peek</span><span class="hljs-params">(<span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str, <span class="hljs-keyword">char</span> *toks)</span>
+</span>{
+    <span class="hljs-keyword">char</span> *s;
+
+    s = *ps;
+    <span class="hljs-keyword">while</span>(s &lt; end_of_str &amp;&amp; <span class="hljs-built_in">strchr</span>(whitespace, *s))
+        s++;
+    *ps = s;
+
+    <span class="hljs-keyword">return</span> *s &amp;&amp; <span class="hljs-built_in">strchr</span>(toks, *s);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-43">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-43">&#182;</a>
+              </div>
+              <p>Definiciones adelantadas de funciones.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd *<span class="hljs-title">parse_line</span><span class="hljs-params">(<span class="hljs-keyword">char</span>**, <span class="hljs-keyword">char</span>*)</span></span>;
+<span class="hljs-function"><span class="hljs-keyword">struct</span> cmd *<span class="hljs-title">parse_pipe</span><span class="hljs-params">(<span class="hljs-keyword">char</span>**, <span class="hljs-keyword">char</span>*)</span></span>;
+<span class="hljs-function"><span class="hljs-keyword">struct</span> cmd *<span class="hljs-title">parse_exec</span><span class="hljs-params">(<span class="hljs-keyword">char</span>**, <span class="hljs-keyword">char</span>*)</span></span>;
+<span class="hljs-function"><span class="hljs-keyword">struct</span> cmd *<span class="hljs-title">nulterminate</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd*)</span></span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-44">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-44">&#182;</a>
+              </div>
+              <p>Función principal que hace el <em>parsing</em> de una línea de órdenes dada por
+el usuario. Llama a la función <code>parse_line()</code> para obtener la estructura
+<code>cmd</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">parse_cmd</span><span class="hljs-params">(<span class="hljs-keyword">char</span> *s)</span>
+</span>{
+    <span class="hljs-keyword">char</span> *end_of_str;
+    <span class="hljs-keyword">struct</span> cmd *cmd;
+
+    end_of_str = s + <span class="hljs-built_in">strlen</span>(s);
+    cmd = parse_line(&amp;s, end_of_str);
+
+    peek(&amp;s, end_of_str, <span class="hljs-string">""</span>);
+    <span class="hljs-keyword">if</span> (s != end_of_str)
+    {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">"restante: %s\n"</span>, s);
+        panic(<span class="hljs-string">"syntax"</span>);
+    }</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-45">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-45">&#182;</a>
+              </div>
+              <p>Termina en <code>&#39;\0&#39;</code> todas las cadenas de caracteres de <code>cmd</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    nulterminate(cmd);
+
+    <span class="hljs-keyword">return</span> cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-46">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-46">&#182;</a>
+              </div>
+              <p><em>Parsing</em> de una línea. Se comprueba primero si la línea contiene alguna
+tubería. Si no, puede ser un comando en ejecución con posibles
+redirecciones o un bloque. A continuación puede especificarse que se
+ejecuta en segundo plano (con <code>&amp;</code>) o simplemente una lista de órdenes
+(con <code>;</code>).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">parse_line</span><span class="hljs-params">(<span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> cmd *cmd;
+
+    cmd = parse_pipe(ps, end_of_str);
+    <span class="hljs-keyword">while</span> (peek(ps, end_of_str, <span class="hljs-string">"&amp;"</span>))
+    {
+        gettoken(ps, end_of_str, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+        cmd = backcmd(cmd);
+    }
+
+    <span class="hljs-keyword">if</span> (peek(ps, end_of_str, <span class="hljs-string">";"</span>))
+    {
+        gettoken(ps, end_of_str, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+        cmd = listcmd(cmd, parse_line(ps, end_of_str));
+    }
+
+    <span class="hljs-keyword">return</span> cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-47">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-47">&#182;</a>
+              </div>
+              <p><em>Parsing</em> de una posible tubería con un número de órdenes.
+<code>parse_exec()</code> comprobará la orden, y si al volver el siguiente <em>token</em>
+es un <code>&#39;|&#39;</code>, significa que se puede ir construyendo una tubería.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">parse_pipe</span><span class="hljs-params">(<span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> cmd *cmd;
+
+    cmd = parse_exec(ps, end_of_str);
+    <span class="hljs-keyword">if</span> (peek(ps, end_of_str, <span class="hljs-string">"|"</span>))
+    {
+        gettoken(ps, end_of_str, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+        cmd = pipecmd(cmd, parse_pipe(ps, end_of_str));
+    }
+
+    <span class="hljs-keyword">return</span> cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-48">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-48">&#182;</a>
+              </div>
+              <p>Construye los comandos de redirección si encuentra alguno de los
+caracteres de redirección.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">parse_redirs</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *cmd, <span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str)</span>
+</span>{
+    <span class="hljs-keyword">int</span> tok;
+    <span class="hljs-keyword">char</span> *q, *eq;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-49">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-49">&#182;</a>
+              </div>
+              <p>Si lo siguiente que hay a continuación es una redirección…</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">while</span> (peek(ps, end_of_str, <span class="hljs-string">"&lt;&gt;"</span>))
+    {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-50">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-50">&#182;</a>
+              </div>
+              <p>La elimina de la entrada</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        tok = gettoken(ps, end_of_str, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-51">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-51">&#182;</a>
+              </div>
+              <p>Si es un argumento, será el nombre del fichero de la
+redirección. <code>q</code> y <code>eq</code> tienen su posición.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-keyword">if</span> (gettoken(ps, end_of_str, &amp;q, &amp;eq) != <span class="hljs-string">'a'</span>)
+            panic(<span class="hljs-string">"missing file for redirection"</span>);
+
+        <span class="hljs-keyword">switch</span>(tok)
+        {
+        <span class="hljs-keyword">case</span> <span class="hljs-string">'&lt;'</span>:
+            cmd = redircmd(cmd, q, eq, O_RDONLY, <span class="hljs-number">0</span>);
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> <span class="hljs-string">'&gt;'</span>:
+            cmd = redircmd(cmd, q, eq, O_RDWR|O_CREAT, <span class="hljs-number">1</span>);
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> <span class="hljs-string">'+'</span>:  <span class="hljs-comment">// &gt;&gt;</span>
+            cmd = redircmd(cmd, q, eq, O_RDWR|O_CREAT, <span class="hljs-number">1</span>);
+            <span class="hljs-keyword">break</span>;
+        }
+    }
+
+    <span class="hljs-keyword">return</span> cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-52">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-52">&#182;</a>
+              </div>
+              <p><em>Parsing</em> de un bloque de órdenes delimitadas por paréntesis.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">parse_block</span><span class="hljs-params">(<span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str)</span>
+</span>{
+    <span class="hljs-keyword">struct</span> cmd *cmd;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-53">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-53">&#182;</a>
+              </div>
+              <p>Esperar e ignorar el paréntesis</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">if</span> (!peek(ps, end_of_str, <span class="hljs-string">"("</span>))
+        panic(<span class="hljs-string">"parse_block"</span>);
+    gettoken(ps, end_of_str, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-54">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-54">&#182;</a>
+              </div>
+              <p>Parse de toda la línea hsta el paréntesis de cierre</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    cmd = parse_line(ps, end_of_str);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-55">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-55">&#182;</a>
+              </div>
+              <p>Elimina el paréntesis de cierre</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">if</span> (!peek(ps, end_of_str, <span class="hljs-string">")"</span>))
+        panic(<span class="hljs-string">"syntax - missing )"</span>);
+    gettoken(ps, end_of_str, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-56">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-56">&#182;</a>
+              </div>
+              <p>¿Posibles redirecciones?</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    cmd = parse_redirs(cmd, ps, end_of_str);
+
+    <span class="hljs-keyword">return</span> cmd;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-57">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-57">&#182;</a>
+              </div>
+              <p>Hace en <em>parsing</em> de una orden, a no ser que la expresión comience por
+un paréntesis. En ese caso, se inicia un grupo de órdenes para ejecutar
+las órdenes de dentro del paréntesis (llamando a <code>parse_block()</code>).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">parse_exec</span><span class="hljs-params">(<span class="hljs-keyword">char</span> **ps, <span class="hljs-keyword">char</span> *end_of_str)</span>
+</span>{
+    <span class="hljs-keyword">char</span> *q, *eq;
+    <span class="hljs-keyword">int</span> tok, argc;
+    <span class="hljs-keyword">struct</span> execcmd *cmd;
+    <span class="hljs-keyword">struct</span> cmd *ret;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-58">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-58">&#182;</a>
+              </div>
+              <p>¿Inicio de un bloque?</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">if</span> (peek(ps, end_of_str, <span class="hljs-string">"("</span>))
+        <span class="hljs-keyword">return</span> parse_block(ps, end_of_str);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-59">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-59">&#182;</a>
+              </div>
+              <p>Si no, lo primero que hay una línea siempre es una orden. Se
+construye el <code>cmd</code> usando la estructura <code>execcmd</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    ret = execcmd();
+    cmd = (<span class="hljs-keyword">struct</span> execcmd*)ret;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-60">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-60">&#182;</a>
+              </div>
+              <p>Bucle para separar los argumentos de las posibles redirecciones.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    argc = <span class="hljs-number">0</span>;
+    ret = parse_redirs(ret, ps, end_of_str);
+    <span class="hljs-keyword">while</span> (!peek(ps, end_of_str, <span class="hljs-string">"|)&amp;;"</span>))
+    {
+        <span class="hljs-keyword">if</span> ((tok=gettoken(ps, end_of_str, &amp;q, &amp;eq)) == <span class="hljs-number">0</span>)
+            <span class="hljs-keyword">break</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-61">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-61">&#182;</a>
+              </div>
+              <p>Aquí tiene que reconocerse un argumento, ya que el bucle para
+cuando hay un separador</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-keyword">if</span> (tok != <span class="hljs-string">'a'</span>)
+            panic(<span class="hljs-string">"syntax"</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-62">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-62">&#182;</a>
+              </div>
+              <p>Apuntar el siguiente argumento reconocido. El primero será la
+orden a ejecutar.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        cmd-&gt;argv[argc] = q;
+        cmd-&gt;eargv[argc] = eq;
+        argc++;
+        <span class="hljs-keyword">if</span> (argc &gt;= MAXARGS)
+            panic(<span class="hljs-string">"too many args"</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-63">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-63">&#182;</a>
+              </div>
+              <p>Y de nuevo apuntar posibles redirecciones</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        ret = parse_redirs(ret, ps, end_of_str);
+    }</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-64">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-64">&#182;</a>
+              </div>
+              <p>Finalizar las líneas de órdenes</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    cmd-&gt;argv[argc] = <span class="hljs-number">0</span>;
+    cmd-&gt;eargv[argc] = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">return</span> ret;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-65">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-65">&#182;</a>
+              </div>
+              <p>Termina en NUL todas las cadenas de <code>cmd</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-function"><span class="hljs-keyword">struct</span> cmd*
+<span class="hljs-title">nulterminate</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cmd *cmd)</span>
+</span>{
+    <span class="hljs-keyword">int</span> i;
+    <span class="hljs-keyword">struct</span> backcmd *bcmd;
+    <span class="hljs-keyword">struct</span> execcmd *ecmd;
+    <span class="hljs-keyword">struct</span> listcmd *lcmd;
+    <span class="hljs-keyword">struct</span> pipecmd *pcmd;
+    <span class="hljs-keyword">struct</span> redircmd *rcmd;
+
+    <span class="hljs-keyword">if</span>(cmd == <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">switch</span>(cmd-&gt;type)
+    {
+    <span class="hljs-keyword">case</span> EXEC:
+        ecmd = (<span class="hljs-keyword">struct</span> execcmd*)cmd;
+        <span class="hljs-keyword">for</span>(i=<span class="hljs-number">0</span>; ecmd-&gt;argv[i]; i++)
+            *ecmd-&gt;eargv[i] = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> REDIR:
+        rcmd = (<span class="hljs-keyword">struct</span> redircmd*)cmd;
+        nulterminate(rcmd-&gt;cmd);
+        *rcmd-&gt;efile = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> PIPE:
+        pcmd = (<span class="hljs-keyword">struct</span> pipecmd*)cmd;
+        nulterminate(pcmd-&gt;left);
+        nulterminate(pcmd-&gt;right);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> LIST:
+        lcmd = (<span class="hljs-keyword">struct</span> listcmd*)cmd;
+        nulterminate(lcmd-&gt;left);
+        nulterminate(lcmd-&gt;right);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> BACK:
+        bcmd = (<span class="hljs-keyword">struct</span> backcmd*)cmd;
+        nulterminate(bcmd-&gt;cmd);
+        <span class="hljs-keyword">break</span>;
+    }
+
+    <span class="hljs-keyword">return</span> cmd;
+}
+
+<span class="hljs-comment">/*
+ * Local variables:
+ * mode: c
+ * c-basic-offset: 4
+ * fill-column: 75
+ * eval: (auto-fill-mode t)
+ * End:
+ */</span></pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>
