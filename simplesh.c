@@ -92,6 +92,19 @@ int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parse_cmd(char*);
 
+// Función para implementar el comando pwd como un comando interno.
+void run_pwd(){
+    char path[MAXPATH];
+    char * ruta = getcwd(path, MAXPATH);
+    if (ruta == NULL){
+        perror("getcwd");
+        exit(EXIT_FAILURE);
+    }
+    fprintf(stderr, "simplesh: pwd: ");
+    fprintf(stdout, "%s\n", ruta);
+}
+
+
 // Ejecuta un `cmd`. Nunca retorna, ya que siempre se ejecuta en un
 // hijo lanzado con `fork()`.
 void
@@ -117,11 +130,14 @@ run_cmd(struct cmd *cmd)
         ecmd = (struct execcmd*)cmd;
         if (ecmd->argv[0] == 0)
             exit(0);
-        execvp(ecmd->argv[0], ecmd->argv);
-
-        // Si se llega aquí algo falló
-        fprintf(stderr, "exec %s failed\n", ecmd->argv[0]);
-        exit (1);
+        if (strcmp(ecmd->argv[0], "pwd") == 0)
+            run_pwd();
+        else{
+            execvp(ecmd->argv[0], ecmd->argv);
+            // Si se llega aquí algo falló
+            fprintf(stderr, "exec %s failed\n", ecmd->argv[0]);
+            exit (1);
+        }
         break;
 
     case REDIR:
