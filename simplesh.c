@@ -104,6 +104,20 @@ void run_pwd(){
     fprintf(stdout, "%s\n", ruta);
 }
 
+// Función para implementar el comando cd como un comando interno.
+void run_cd(char *command){
+    struct execcmd *comm = (struct execcmd*)parse_cmd(command);
+    char *route;
+    if (comm->argv[1] == NULL)
+        route = getenv("HOME");
+    else
+        route = comm->argv[1];
+    if (chdir(route) == -1){
+        perror("chdir");
+        exit(EXIT_FAILURE);
+    }
+    
+}
 
 // Ejecuta un `cmd`. Nunca retorna, ya que siempre se ejecuta en un
 // hijo lanzado con `fork()`.
@@ -243,8 +257,12 @@ int main(void) {
     // Bucle de lectura y ejecución de órdenes.
     while (NULL != (buf = getcmd()))
     {
+        if (strcmp(((struct execcmd*)parse_cmd(buf))->argv[0], "exit") == 0)
+            return 0;
+        else if (strncmp(buf, "cd", 2) == 0)
+            run_cd(buf);
         // Crear siempre un hijo para ejecutar el comando leído
-        if(fork1() == 0)
+        else if(fork1() == 0)
             run_cmd(parse_cmd(buf));
 
         // Esperar al hijo creado
