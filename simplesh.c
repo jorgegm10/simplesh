@@ -257,7 +257,7 @@ int main(void) {
     // Bucle de lectura y ejecución de órdenes.
     while (NULL != (buf = getcmd()))
     {
-        if (strcmp(((struct execcmd*)parse_cmd(buf))->argv[0], "exit") == 0)
+        if ((strcmp(buf, "") != 0) && (strcmp(((struct execcmd*)parse_cmd(buf))->argv[0], "exit") == 0))
             return 0;
         else if (strncmp(buf, "cd", 2) == 0)
             run_cd(buf);
