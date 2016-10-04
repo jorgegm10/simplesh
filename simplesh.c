@@ -1,5 +1,6 @@
 // Shell `simplesh`
 #include <unistd.h>
+#include <errno.h>
 #include <string.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -105,16 +106,17 @@ void run_pwd(){
 }
 
 // Función para implementar el comando cd como un comando interno.
-void run_cd(char *command){
-    struct execcmd *comm = (struct execcmd*)parse_cmd(command);
+void run_cd(struct cmd *command){
+    struct execcmd *comm = (struct execcmd*)command;
     char *route;
     if (comm->argv[1] == NULL)
         route = getenv("HOME");
     else
         route = comm->argv[1];
     if (chdir(route) == -1){
-        perror("chdir");
-        exit(EXIT_FAILURE);
+        perror("cd");
+        if (errno != ENOENT && errno != EACCES && errno != ENOTDIR)
+            exit(EXIT_FAILURE);
     }
     
 }
@@ -248,6 +250,26 @@ char* getcmd() {
     return buf;
 }
 
+void run(struct cmd *command){
+    
+    if (command->type == LIST){
+        struct listcmd *lcmd = (struct listcmd *)command;
+        run(lcmd->left);
+        run(lcmd->right);
+    }
+    else if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "exit") == 0)
+        exit(0);
+    else if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "cd") == 0)
+        run_cd(command);
+    // Crear siempre un hijo para ejecutar el comando leído
+    else if(fork1() == 0)
+        run_cmd(command);
+    
+    // Esperar al hijo creado
+    wait(NULL);
+}
+
+
 // Función `main()`.
 // ----
 
@@ -257,19 +279,13 @@ int main(void) {
     // Bucle de lectura y ejecución de órdenes.
     while (NULL != (buf = getcmd()))
     {
-        if ((strcmp(buf, "") != 0) && (strcmp(((struct execcmd*)parse_cmd(buf))->argv[0], "exit") == 0))
-            return 0;
-        else if (strncmp(buf, "cd", 2) == 0)
-            run_cd(buf);
-        // Crear siempre un hijo para ejecutar el comando leído
-        else if(fork1() == 0)
-            run_cmd(parse_cmd(buf));
-
-        // Esperar al hijo creado
-        wait(NULL);
-
+        if (strcmp(buf, "") != 0){
+            struct cmd *command = parse_cmd(buf);
+            run(command);
+        
+        }
         free ((void*)buf);
-    }
+    } 
 
     return 0;
 }
