@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <pwd.h>
 #include <libgen.h>
+#include <getopt.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -121,6 +122,57 @@ void run_cd(struct cmd *command){
     
 }
 
+// Función para implementar el comando tee como un comando interno
+void run_tee(struct execcmd* ecmd){
+    int cont=0;
+    int opt;
+    int aflag = 0;
+    int hflag = 0;
+    while (ecmd->argv[cont])
+        cont++;
+    while ((opt = getopt(cont, ecmd->argv, "ha")) != -1){
+        switch (opt){
+            case 'h':
+                hflag = 1;
+                break;
+            case 'a':
+                aflag = 1;
+                break;
+            case '?':
+                hflag = 1;
+                break;
+        }
+    }
+    
+    if (hflag){
+        fprintf(stdout, "Uso: tee [-h] [-a] [FICHERO]\n");
+        fprintf(stdout, "\t Copia stdin a cada FICHERO y a stdout\n");
+        fprintf(stdout, "\t Opciones:\n");
+        fprintf(stdout, "\t-a Añade al final de cada FICHERO\n");
+        fprintf(stdout, "\t-h help\n");
+    }
+    else{
+        int numFich = cont-optind;
+        int descriptor[numFich];
+        if (aflag)
+            for (int i = optind; i < numFich; i++) {
+                descriptor[i-optind] = open(ecmd->argv[i]), O_WRONLY|O_APPEND|O_CREAT);
+                if(descriptor[i-optind] == -1){
+                    perror("open");
+                }
+            }
+        else
+            for (int i = optind; i < numFich; i++) {
+                descriptor[i-optind] = open(ecmd->argv[i]), O_WRONLY|O_CREAT|O_TRUNC);
+                if(descriptor[i-optind] == -1){
+                    perror("open");
+                }
+            }
+            
+    }
+}
+
+
 // Ejecuta un `cmd`. Nunca retorna, ya que siempre se ejecuta en un
 // hijo lanzado con `fork()`.
 void
@@ -146,8 +198,10 @@ run_cmd(struct cmd *cmd)
         ecmd = (struct execcmd*)cmd;
         if (ecmd->argv[0] == 0)
             exit(0);
-        if (strcmp(ecmd->argv[0], "pwd") == 0)
+        else if (strcmp(ecmd->argv[0], "pwd") == 0)
             run_pwd();
+        else if (strcmp(ecmd->argv[0], "tee") == 0)
+            run_tee(ecmd);
         else{
             execvp(ecmd->argv[0], ecmd->argv);
             // Si se llega aquí algo falló
