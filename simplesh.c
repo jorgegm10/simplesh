@@ -8,6 +8,7 @@
 #include <pwd.h>
 #include <libgen.h>
 #include <getopt.h>
+#include <sys/time.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -27,6 +28,11 @@
 #define MAXARGS 15
 
 #define MAXPATH 256
+
+#define READSIZE 512
+
+#define AOPENFLAGS O_WRONLY|O_APPEND|O_CREAT
+#define OPENFLAGS O_WRONLY|O_APPEND|O_CREAT
 
 // Estructuras
 // -----
@@ -122,6 +128,33 @@ void run_cd(struct cmd *command){
     
 }
 
+void print_teelog(int bytes, int files){
+    int pid, euid;
+    struct timeval tv;
+    time_t tm;
+    char tmbuf[20];
+    pid = getpid();
+    euid = geteuid();
+    
+    if(gettimeofday(&tv, NULL) == -1)
+        perror("gettimeofday");
+    else{
+        tm = tv.tv_sec;
+        struct tm * tiempo = localtime(&tm);
+        strftime(tmbuf, sizeof tmbuf, "%Y-%m-%d %H:%M:%S", tiempo);
+        char output[64];
+        int chars = sprintf(output, "%s:PID %d:EUID %d:%d byte(s):%d file(s)\n", tmbuf, pid, euid, bytes, files);
+        
+        int descr = open(".tee.log", AOPENFLAGS, S_IRWXU);
+        if (descr != -1){
+           if(write(descr, output, chars) == -1)
+            perror("write");
+        }
+        else
+            perror("open");
+    }
+}
+
 // Función para implementar el comando tee como un comando interno
 void run_tee(struct execcmd* ecmd){
     int cont=0;
@@ -146,29 +179,68 @@ void run_tee(struct execcmd* ecmd){
     
     if (hflag){
         fprintf(stdout, "Uso: tee [-h] [-a] [FICHERO]\n");
-        fprintf(stdout, "\t Copia stdin a cada FICHERO y a stdout\n");
-        fprintf(stdout, "\t Opciones:\n");
+        fprintf(stdout, "\tCopia stdin a cada FICHERO y a stdout\n");
+        fprintf(stdout, "\tOpciones:\n");
         fprintf(stdout, "\t-a Añade al final de cada FICHERO\n");
         fprintf(stdout, "\t-h help\n");
     }
     else{
         int numFich = cont-optind;
         int descriptor[numFich];
+        int flag;
         if (aflag)
-            for (int i = optind; i < numFich; i++) {
-                descriptor[i-optind] = open(ecmd->argv[i]), O_WRONLY|O_APPEND|O_CREAT);
-                if(descriptor[i-optind] == -1){
-                    perror("open");
-                }
-            }
+            flag = AOPENFLAGS;
         else
-            for (int i = optind; i < numFich; i++) {
-                descriptor[i-optind] = open(ecmd->argv[i]), O_WRONLY|O_CREAT|O_TRUNC);
-                if(descriptor[i-optind] == -1){
-                    perror("open");
+            flag = OPENFLAGS;
+            
+        for (int i = 0; i < numFich; i++) {
+            descriptor[i] = open(ecmd->argv[i+optind], flag, S_IRWXU);
+            if(descriptor[i] == -1){
+                perror("open");
+            }
+        }
+        
+        char buf[READSIZE];
+        int bytesLeidos = 0;
+        int bytesEscritos = 0;
+        int aux = 0;
+        int bytes = 0;
+        while ((bytesLeidos = read(STDIN_FILENO, buf, READSIZE)) > 0){
+            bytes += bytesLeidos;
+            while (bytesEscritos != bytesLeidos){
+                aux = write(STDOUT_FILENO, buf, bytesLeidos);
+                if (aux != -1)
+                    bytesEscritos+= aux;
+                else{
+                    perror ("write");
                 }
             }
-            
+            bytesEscritos = 0;
+            for (int i = 0; i < numFich; i++) {
+                if (descriptor[i] != -1){
+                    while(bytesEscritos != bytesLeidos){
+                        aux = write(descriptor[i], buf, bytesLeidos);
+                        if (aux != -1)
+                            bytesEscritos += aux;
+                        else
+                            perror("write");
+                    }
+                    bytesEscritos = 0;
+                }
+            }
+        }
+        if (bytesLeidos == -1)
+            perror("read");
+        
+        for (int i = 0; i < numFich; i++){
+            if (descriptor[i] != -1){
+                if (fsync(descriptor[i]) == -1)
+                    perror("fsync");
+                if (close(descriptor[i]) == -1)
+                    perror("close");
+            }
+        }
+        print_teelog(bytes, numFich);
     }
 }
 
