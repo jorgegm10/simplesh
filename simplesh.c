@@ -178,11 +178,11 @@ void run_tee(struct execcmd* ecmd){
     }
     
     if (hflag){
-        fprintf(stdout, "Uso: tee [-h] [-a] [FICHERO]\n");
-        fprintf(stdout, "\tCopia stdin a cada FICHERO y a stdout\n");
-        fprintf(stdout, "\tOpciones:\n");
-        fprintf(stdout, "\t-a Añade al final de cada FICHERO\n");
-        fprintf(stdout, "\t-h help\n");
+        fprintf(stdout, "Uso: tee [-h] [-a] [FICHERO]\n"\
+                            "\tCopia stdin a cada FICHERO y a stdout\n"\
+                            "\tOpciones:\n"\
+                            "\t-a Añade al final de cada FICHERO\n"\
+                            "\t-h help\n");
     }
     else{
         int numFich = cont-optind;
@@ -245,11 +245,79 @@ void run_tee(struct execcmd* ecmd){
 }
 
 
+void run_du(struct execcmd *ecmd){
+    int opt;
+    int cont = 0;
+    size_t size;
+    int hflag = 0;
+    int bflag = 0;
+    int vflag = 0;
+    int tflag = 0;
+    while (ecmd->argv[cont])
+        cont++;
+     while ((opt = getopt(cont, ecmd->argv, "hbvt:")) != -1){
+        switch (opt){
+            case 'h':
+                hflag = 1;
+                break;
+            case 'b':
+                bflag = 1;
+                break;
+            case 'v':
+                vflag = 1;
+                break;
+            case 't':
+                tflag = 1;
+                sscanf(optarg, "%zu", &size);
+                break;
+            case '?':
+                hflag = 1;
+                break;
+        }
+    }
+    if (hflag){
+        
+        fprintf(stdout, "Uso : du [-h] [- b] [ -t SIZE ] [-v ] [ FICHERO | DIRECTORIO ]\n"\
+        "Para cada fichero, imprime su tamaño.\n"\
+        "Para cada directorio, imprime la suma de los tamaños de todos los ficheros de\n"\
+            "\ttodos sus subdirectorios.\n"\
+            "\tOpciones :\n"\
+            "\t-b Imprime el tamaño ocupado en disco por todos los bloques del fichero.\n"\
+            "\t-t SIZE Excluye todos los ficheros más pequeños que SIZE bytes, si es\n"\
+            "\tpositivo, o más grandes que SIZE bytes, si es negativo, cuando se\n"\
+                "\t\tprocesa un directorio .\n"\
+            "\t-v Imprime el tamaño de todos y cada uno de los ficheros cuando se procesa un\n"\
+                "\t\tdirectorio.\n" \
+            "\t-h help\n"\
+        "Nota: todos los tamaños están expresados en bytes\n");
+    }
+    else {
+        struct stat st;
+        for (int i = optind; i < cont ; i++){
+            if (stat(ecmd->argv[i], &st) == -1) {
+                perror("stat");
+                exit(EXIT_FAILURE);
+            }
+            if(S_IFDIR(st.st_mode)){
+                // Llamamos a nftw
+            }
+            else if (S_IFREG(st.st_mode)) {
+                fprintf(stdout,"(F) ");
+                if (bflag)
+                    fprintf(stdout, "%zu", st.st_blksize);
+                else 
+                    fprintf(stdout, "%zu", st.st_size);
+            }
+            
+        }
+        
+        
+    }
+}
+
 // Ejecuta un `cmd`. Nunca retorna, ya que siempre se ejecuta en un
 // hijo lanzado con `fork()`.
-void
-run_cmd(struct cmd *cmd)
-{
+void run_cmd(struct cmd *cmd){
     int p[2];
     struct backcmd *bcmd;
     struct execcmd *ecmd;
@@ -274,6 +342,8 @@ run_cmd(struct cmd *cmd)
             run_pwd();
         else if (strcmp(ecmd->argv[0], "tee") == 0)
             run_tee(ecmd);
+        else if (strcmp(ecmd->argv[0], "du") == 0)
+            run_du(ecmd);
         else{
             execvp(ecmd->argv[0], ecmd->argv);
             // Si se llega aquí algo falló
