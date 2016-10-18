@@ -1,4 +1,5 @@
 // Shell `simplesh`
+#define _XOPEN_SOURCE 500 
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
@@ -8,8 +9,9 @@
 #include <pwd.h>
 #include <libgen.h>
 #include <getopt.h>
-#include <sys/time.h>
+#include <ftw.h>
 
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -17,6 +19,7 @@
 // Libreadline
 #include <readline/readline.h>
 #include <readline/history.h>
+
 
 // Tipos presentes en la estructura `cmd`, campo `type`.
 #define EXEC  1
@@ -244,11 +247,20 @@ void run_tee(struct execcmd* ecmd){
     }
 }
 
+int totalSize;
+
+int du_aux(const char *fpath, const struct stat *sb,
+            int tflag, struct FTW *ftwbuf){
+    if (S_ISREG(sb->st_mode))
+        totalSize += (int) sb->st_size;
+    return 0; /* To tell nftw() to continue */
+}
+
 
 void run_du(struct execcmd *ecmd){
     int opt;
     int cont = 0;
-    size_t size;
+    int size;
     int hflag = 0;
     int bflag = 0;
     int vflag = 0;
@@ -268,7 +280,7 @@ void run_du(struct execcmd *ecmd){
                 break;
             case 't':
                 tflag = 1;
-                sscanf(optarg, "%zu", &size);
+                sscanf(optarg, "%d", &size);
                 break;
             case '?':
                 hflag = 1;
@@ -293,25 +305,40 @@ void run_du(struct execcmd *ecmd){
     }
     else {
         struct stat st;
-        for (int i = optind; i < cont ; i++){
-            if (stat(ecmd->argv[i], &st) == -1) {
+        int i = optind;
+        do{
+            char * path;
+            path = i < cont ? ecmd->argv[i] : ".";
+            if (stat(path, &st) == -1) {
                 perror("stat");
                 exit(EXIT_FAILURE);
             }
-            if(S_IFDIR(st.st_mode)){
-                // Llamamos a nftw
+            if(S_ISDIR(st.st_mode)){
+                int flags = 0;
+                int nopenfd = 20;
+                totalSize = 0;
+                if (nftw(path, du_aux, 20, flags) == -1){
+                    perror("nftw");
+                    exit(EXIT_FAILURE);
+                }
+                fprintf(stdout,"(D) %s: %d\n", path, totalSize);
             }
-            else if (S_IFREG(st.st_mode)) {
-                fprintf(stdout,"(F) ");
-                if (bflag)
-                    fprintf(stdout, "%zu", st.st_blksize);
-                else 
-                    fprintf(stdout, "%zu", st.st_size);
+            else if (S_ISREG(st.st_mode)) {
+                int sizethreshold = 0;
+                if (tflag)
+                    sizethreshold = size;    
+                if ((sizethreshold > 0 && st.st_size < sizethreshold) 
+                        || (sizethreshold < 0 && st.st_size > sizethreshold)
+                        || sizethreshold == 0){
+                    fprintf(stdout,"(F) ");
+                    if (bflag)
+                        fprintf(stdout, "%s: %zu\n", path, st.st_blocks*512);
+                    else 
+                        fprintf(stdout, "%s: %zu\n", path, st.st_size);
+                }
             }
-            
-        }
-        
-        
+            i++;
+        } while (i < cont);
     }
 }
 
