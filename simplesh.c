@@ -132,6 +132,7 @@ void run_cd(struct cmd *command){
 }
 
 void print_teelog(int bytes, int files){
+    printf("log");
     int pid, euid;
     struct timeval tv;
     time_t tm;
@@ -147,8 +148,11 @@ void print_teelog(int bytes, int files){
         strftime(tmbuf, sizeof tmbuf, "%Y-%m-%d %H:%M:%S", tiempo);
         char output[64];
         int chars = sprintf(output, "%s:PID %d:EUID %d:%d byte(s):%d file(s)\n", tmbuf, pid, euid, bytes, files);
-        
-        int descr = open(".tee.log", AOPENFLAGS, S_IRWXU);
+        char* ruta = "/.log.tee";
+        char * home = getenv("HOME");
+        strcat(home, ruta);
+        printf("Creando log en %s\n", home);
+        int descr = open(home, AOPENFLAGS, S_IRWXU);        
         if (descr != -1){
            if(write(descr, output, chars) == -1)
             perror("write");
