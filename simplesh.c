@@ -251,12 +251,61 @@ void run_tee(struct execcmd* ecmd){
     }
 }
 
-int totalSize;
-
+static int totalSize = 0;
+static int du_bflag = 0; // Tamaño en disco de los bloques
+static int du_vflag = 0; // Verbose, imprime el tamaño de todos
+static int du_tflag = 0; // Restriccion de tamaño
+static int size = 0;
 int du_aux(const char *fpath, const struct stat *sb,
             int tflag, struct FTW *ftwbuf){
-    if (S_ISREG(sb->st_mode))
-        totalSize += (int) sb->st_size;
+    
+    // Esto de aqui funciona perfecto si solo usas -v, pero
+    // si lo combinas con -t que tienes que descartar cositas no vale
+    // porque lo imprime aunque lo descartes y se lia parda.
+    // Podria funcionar meterlo dentro y aqui solo se imprime el nombre del directorio,
+    // aunque igualmente si no se imprime nada del directorio no habria que imprimir
+    // su nombre :thinking:
+    
+    int discarded = 0;
+    int sizethreshold = 0;
+    if (du_tflag){
+        sizethreshold = size;
+        if (S_ISREG(sb->st_mode) && ((sizethreshold > 0 && sb->st_size < sizethreshold)  
+                                 || (sizethreshold < 0 && sb->st_size > sizethreshold*-1)
+                                 || sizethreshold == 0)){
+            discarded = 1;                                 
+        }
+    }
+    
+    if (du_vflag && !discarded){
+        for (int i = 0; i < ftwbuf->level; i++) {
+            fprintf(stdout, "\t");
+        }
+        fprintf(stdout, "%s", fpath);
+    }
+        
+    if (S_ISREG(sb->st_mode)){
+        /*int sizethreshold = 0;
+        if (du_tflag)
+            sizethreshold = size;  */
+        if (!discarded){
+                
+            // Estas dos if elses de aqui abajo dan un poco de sidote, mira
+            // ver si se hay alguna forma de reducirlos xD
+            
+            if (du_bflag)
+                totalSize += (sb->st_blocks*512);
+            else 
+                totalSize += (int) sb->st_size;
+            if (du_vflag && du_bflag)
+                fprintf(stdout, ": %zu\n", sb->st_blocks*512);
+            else if (du_vflag)
+                fprintf(stdout, ": %zu\n", sb->st_size);
+        }
+    }
+    // Cosa nazi para meter los saltos de linea
+    else if(du_vflag)
+        fprintf(stdout, "\n");
     return 0; /* To tell nftw() to continue */
 }
 
@@ -264,34 +313,30 @@ int du_aux(const char *fpath, const struct stat *sb,
 void run_du(struct execcmd *ecmd){
     int opt;
     int cont = 0;
-    int size;
-    int hflag = 0;
-    int bflag = 0;
-    int vflag = 0;
-    int tflag = 0;
+    int du_hflag = 0;
     while (ecmd->argv[cont])
         cont++;
      while ((opt = getopt(cont, ecmd->argv, "hbvt:")) != -1){
         switch (opt){
             case 'h':
-                hflag = 1;
+                du_hflag = 1;
                 break;
             case 'b':
-                bflag = 1;
+                du_bflag = 1;
                 break;
             case 'v':
-                vflag = 1;
+                du_vflag = 1;
                 break;
             case 't':
-                tflag = 1;
+                du_tflag = 1;
                 sscanf(optarg, "%d", &size);
                 break;
             case '?':
-                hflag = 1;
+                du_hflag = 1;
                 break;
         }
     }
-    if (hflag){
+    if (du_hflag){
         
         fprintf(stdout, "Uso : du [-h] [- b] [ -t SIZE ] [-v ] [ FICHERO | DIRECTORIO ]\n"\
         "Para cada fichero, imprime su tamaño.\n"\
@@ -300,7 +345,7 @@ void run_du(struct execcmd *ecmd){
             "\tOpciones :\n"\
             "\t-b Imprime el tamaño ocupado en disco por todos los bloques del fichero.\n"\
             "\t-t SIZE Excluye todos los ficheros más pequeños que SIZE bytes, si es\n"\
-            "\tpositivo, o más grandes que SIZE bytes, si es negativo, cuando se\n"\
+            "\tnegativo, o más pequeños que SIZE bytes, si es negativo, cuando se\n"\
                 "\t\tprocesa un directorio .\n"\
             "\t-v Imprime el tamaño de todos y cada uno de los ficheros cuando se procesa un\n"\
                 "\t\tdirectorio.\n" \
@@ -329,13 +374,13 @@ void run_du(struct execcmd *ecmd){
             }
             else if (S_ISREG(st.st_mode)) {
                 int sizethreshold = 0;
-                if (tflag)
+                if (du_tflag)
                     sizethreshold = size;    
                 if ((sizethreshold > 0 && st.st_size < sizethreshold) 
-                        || (sizethreshold < 0 && st.st_size > sizethreshold)
+                        || (sizethreshold < 0 && st.st_size > sizethreshold*-1)
                         || sizethreshold == 0){
                     fprintf(stdout,"(F) ");
-                    if (bflag)
+                    if (du_bflag)
                         fprintf(stdout, "%s: %zu\n", path, st.st_blocks*512);
                     else 
                         fprintf(stdout, "%s: %zu\n", path, st.st_size);
