@@ -1,3 +1,10 @@
+/*
+    GRUPO 1.2
+    Antonio Saavedra Sanchez
+    Jorge Gallego Madrid
+*/
+
+
 // Shell `simplesh`
 #define _XOPEN_SOURCE 500 
 #include <unistd.h>
@@ -528,74 +535,26 @@ char* getcmd() {
     return buf;
 }
 
-
-
-/*void run(struct cmd *command){
-    
-    if (command->type == LIST){
-        struct listcmd *lcmd = (struct listcmd *)command;
-        run(lcmd->left);
-        run(lcmd->right);
-    }
-    else if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "exit") == 0)
-        exit(0);
-    else if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "cd") == 0)
-        run_cd(command);
-    // Crear siempre un hijo para ejecutar el comando leído
-    else if(fork1() == 0)
-        run_cmd(command);
-    
-    // Esperar al hijo creado
-    //wait(NULL);
-    
-     struct timespec timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_nsec = 0;
-    sigset_t sigc;
-    sigaddset(&sigc, SIGCHLD);
-    
-    siginfo_t info;
-    
-    if (sigtimedwait(&sigc, &info, &timeout) < 0) {
-    	if (errno == EAGAIN) {
-			fprintf(stderr, "simplesh: [%d] Matado hijo con PID %d\n", count, info.si_pid);
-			kill (info.si_pid, SIGKILL);
-    	}
-    	else {
-			perror ("sigtimedwait");
-			exit(EXIT_FAILURE);
-    	}
-    
-    }
-    waitpid(info.si_pid, NULL, 0);
-
-    
-    sigset_t blocked_signals;
-    sigaddset(&blocked_signals, SIGCHLD);
-    if (sigprocmask(SIG_UNBLOCK, &blocked_signals, NULL) == -1){
-        perror("sigprocmask");
-        exit(EXIT_FAILURE);
-    }
-    if (sigprocmask(SIG_BLOCK, &blocked_signals, NULL) == -1){
-        perror("sigprocmask");
-        exit(EXIT_FAILURE);
-    }
-    
-}
-
-*/
 static int count = 0;
 static void signal_handler(int sig){
     if (sig == SIGCHLD) {
         count ++;
-        printf("incrementado cont, valor %d \n", count);
     }
     return;
 }
 
+static int sigus_timeout = 5;
+static void sigus_handler(int sig){
+    if (sig == SIGUSR1){
+        sigus_timeout += 5;
+    }
+    else if (sig == SIGUSR2 && sigus_timeout > 5){
+        sigus_timeout -= 5;
+    }
+        
+}
 
-
-// ----
+// MAIN ----
 
 int main(void) {
     char* buf;
@@ -612,7 +571,17 @@ int main(void) {
     struct sigaction sa;
     sa.sa_handler = signal_handler;
     if (sigaction(SIGCHLD, &sa, NULL) == -1){
-        perror("sigaction 1");
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    struct sigaction sigusr;
+    sigusr.sa_handler = sigus_handler;
+    if (sigaction(SIGUSR1, &sigusr, NULL) == -1){
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    if (sigaction(SIGUSR2, &sigusr, NULL) == -1){
+        perror("sigaction");
         exit(EXIT_FAILURE);
     }
     
@@ -621,12 +590,12 @@ int main(void) {
     while (NULL != (buf = getcmd()))
     {
         struct timespec timeout;
-        timeout.tv_sec = 5;
+        timeout.tv_sec = sigus_timeout;
         timeout.tv_nsec = 0;
         sigset_t sigc;
         sigaddset(&sigc, SIGCHLD);
         siginfo_t info;
-        
+        printf("timeout = %d\n", sigus_timeout);
         struct cmd* command = parse_cmd(buf);
         if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "exit") == 0)
             exit(0);
@@ -635,21 +604,24 @@ int main(void) {
         // Crear siempre un hijo para ejecutar el comando leído
         else{
             int pid = fork1();
-        
             if(pid == 0)
                 run_cmd(command);
-            //wait(NULL);
-            if (sigtimedwait(&sigc, &info, &timeout) < 0) {
-            	if (errno == EAGAIN) {
-        			fprintf(stderr, "simplesh: [%d] Matado hijo con PID %d\n", count, pid);
-        			kill (pid, SIGKILL);
-            	}
-            	else {
-        			perror ("sigtimedwait");
-        			exit(EXIT_FAILURE);
-            	}
-            
-            }
+            do{
+                if (sigtimedwait(&sigc, &info, &timeout) < 0) {
+                	if (errno == EAGAIN) {
+            			fprintf(stderr, "simplesh: [%d] Matado hijo con PID %d\n", count, pid);
+            			kill (pid, SIGKILL);
+                	}
+                	else if (errno == EINTR){
+                	    continue;
+                	}
+                	else {
+            			perror ("sigtimedwait");
+            			exit(EXIT_FAILURE);
+                	}
+                }
+            	break;
+            } while (1);
             waitpid(pid, NULL, 0);
         
             sigset_t blocked_signals;
