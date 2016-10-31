@@ -270,7 +270,7 @@ int du_aux(const char *fpath, const struct stat *sb,
     int sizethreshold = 0;
     if (du_tflag){
         sizethreshold = size;
-        if (S_ISREG(sb->st_mode) && ((sizethreshold > 0 && sb->st_size < sizethreshold)  
+        if (S_ISREG(sb->st_mode) && !((sizethreshold > 0 && sb->st_size < sizethreshold)  
                                  || (sizethreshold < 0 && sb->st_size > sizethreshold*-1)
                                  || sizethreshold == 0)){
             discarded = 1;                                 
