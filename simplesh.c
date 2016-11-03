@@ -41,6 +41,8 @@
 
 #define READSIZE 512
 
+#define INITIAL_TIMEOUT 5
+
 #define AOPENFLAGS O_WRONLY|O_APPEND|O_CREAT
 #define OPENFLAGS O_WRONLY|O_APPEND|O_CREAT
 
@@ -543,7 +545,7 @@ static void signal_handler(int sig){
     return;
 }
 
-static int sigus_timeout = 5;
+static int sigus_timeout = INITIAL_TIMEOUT;
 static void sigus_handler(int sig){
     if (sig == SIGUSR1){
         sigus_timeout += 5;
