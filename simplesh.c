@@ -36,15 +36,15 @@
 #define BACK  5
 
 #define MAXARGS 15
-
 #define MAXPATH 256
-
 #define READSIZE 512
 
+// Timeout inicial de simplesh
 #define INITIAL_TIMEOUT 5
 
+// Flags para el open en tee
 #define AOPENFLAGS O_WRONLY|O_APPEND|O_CREAT
-#define OPENFLAGS O_WRONLY|O_APPEND|O_CREAT
+#define OPENFLAGS O_WRONLY|O_TRUNC|O_CREAT
 
 // Estructuras
 // -----
@@ -112,9 +112,10 @@ int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parse_cmd(char*);
 
-// Función para implementar el comando pwd como un comando interno.
+// Boletin 2, ejercicio 3. Función para implementar el comando pwd como un comando interno.
 void run_pwd(){
     char path[MAXPATH];
+    // Obtenemos el path actual.
     char * ruta = getcwd(path, MAXPATH);
     if (ruta == NULL){
         perror("getcwd");
@@ -126,16 +127,21 @@ void run_pwd(){
 }
 
 
-// Función para implementar el comando cd como un comando interno.
+// Boletin 2, ejercicio 5. Función para implementar el comando cd como un comando interno.
 void run_cd(struct cmd *command){
     struct execcmd *comm = (struct execcmd*)command;
     char *route;
+    // Si no se le pasa argumento se cambia al directorio home
     if (comm->argv[1] == NULL)
         route = getenv("HOME");
+    // Si se recibe, se cambia al directorio indicado como argumento.
     else
         route = comm->argv[1];
     if (chdir(route) == -1){
         perror("cd");
+        // Tratamos errores del cd y solo nos salimos si no es alguno de los errores 
+        // indicados, ya que éstos no son fatales y la ejecución puede continuar sin
+        // ningún problema.
         if (errno != ENOENT && errno != EACCES && errno != ENOTDIR)
             exit(EXIT_FAILURE);
     }
@@ -143,8 +149,8 @@ void run_cd(struct cmd *command){
     
 }
 
+// Boletin 3, opcional. Comando tee añade una línea al fichero $HOME/.tee.log.
 void print_teelog(int bytes, int files){
-    printf("log");
     int pid, euid;
     struct timeval tv;
     time_t tm;
@@ -155,16 +161,19 @@ void print_teelog(int bytes, int files){
     if(gettimeofday(&tv, NULL) == -1)
         perror("gettimeofday");
     else{
+        // Obtenemos fecha y hora
         tm = tv.tv_sec;
         struct tm * tiempo = localtime(&tm);
         strftime(tmbuf, sizeof tmbuf, "%Y-%m-%d %H:%M:%S", tiempo);
+        // Guardamos en output la línea a escribir.
         char output[64];
         int chars = sprintf(output, "%s:PID %d:EUID %d:%d byte(s):%d file(s)\n", tmbuf, pid, euid, bytes, files);
-        char* ruta = "/.log.tee";
+        char* file = "/.tee.log";
         char * home = getenv("HOME");
-        strcat(home, ruta);
-        printf("Creando log en %s\n", home);
-        int descr = open(home, AOPENFLAGS, S_IRWXU);        
+        char path[32];
+        sprintf(path, "%s%s", home, file);
+        // Abrimos el fichero en modo append
+        int descr = open(path, AOPENFLAGS, S_IRWXU);        
         if (descr != -1){
            if(write(descr, output, chars) == -1)
             perror("write");
@@ -174,14 +183,16 @@ void print_teelog(int bytes, int files){
     }
 }
 
-// Función para implementar el comando tee como un comando interno
+// Boletin 3, ejercicio 1. Función para implementar el comando tee como un comando interno
 void run_tee(struct execcmd* ecmd){
     int cont=0;
     int opt;
     int aflag = 0;
     int hflag = 0;
+    // Contamos el numero de argumentos
     while (ecmd->argv[cont])
         cont++;
+    // Procesamos los parámetros
     while ((opt = getopt(cont, ecmd->argv, "ha")) != -1){
         switch (opt){
             case 'h':
@@ -196,6 +207,8 @@ void run_tee(struct execcmd* ecmd){
         }
     }
     
+    // Si se encuentra la opción h o no se reconoce alguna de las que se introducen,
+    // se muestra la ayuda y se ignoran el resto de opciones.
     if (hflag){
         fprintf(stdout, "Uso: tee [-h] [-a] [FICHERO]\n"\
                             "\tCopia stdin a cada FICHERO y a stdout\n"\
@@ -204,14 +217,18 @@ void run_tee(struct execcmd* ecmd){
                             "\t-h help\n");
     }
     else{
+        // Calculamos el número de ficheros que se pasan como argumento
         int numFich = cont-optind;
         int descriptor[numFich];
         int flag;
+        // Definimos los flags del open en funcion de la opción -a, si se encuentra
+        // usamos el O_APPEND, si no, O_TRUNC.
         if (aflag)
             flag = AOPENFLAGS;
         else
             flag = OPENFLAGS;
-            
+        
+        // Abrimos los ficheros    
         for (int i = 0; i < numFich; i++) {
             descriptor[i] = open(ecmd->argv[i+optind], flag, S_IRWXU);
             if(descriptor[i] == -1){
@@ -224,9 +241,11 @@ void run_tee(struct execcmd* ecmd){
         int bytesEscritos = 0;
         int aux = 0;
         int bytes = 0;
+        // Leemos de stdin
         while ((bytesLeidos = read(STDIN_FILENO, buf, READSIZE)) > 0){
             bytes += bytesLeidos;
             while (bytesEscritos != bytesLeidos){
+                // Escribimos a stdout
                 aux = write(STDOUT_FILENO, buf, bytesLeidos);
                 if (aux != -1)
                     bytesEscritos+= aux;
@@ -235,6 +254,7 @@ void run_tee(struct execcmd* ecmd){
                 }
             }
             bytesEscritos = 0;
+            // Escribimos en cada fichero
             for (int i = 0; i < numFich; i++) {
                 if (descriptor[i] != -1){
                     while(bytesEscritos != bytesLeidos){
@@ -250,11 +270,12 @@ void run_tee(struct execcmd* ecmd){
         }
         if (bytesLeidos == -1)
             perror("read");
-        
+        // Nos aseguramos que los ficheros han sido escritos a disco.
         for (int i = 0; i < numFich; i++){
             if (descriptor[i] != -1){
                 if (fsync(descriptor[i]) == -1)
                     perror("fsync");
+                // Cerramos solo los ficheros que se pudieron abrir con éxito.
                 if (close(descriptor[i]) == -1)
                     perror("close");
             }
@@ -264,48 +285,38 @@ void run_tee(struct execcmd* ecmd){
     exit(0);
 }
 
+// Variables globales static para la función auxiliar.
 static int totalSize = 0;
 static int du_bflag = 0; // Tamaño en disco de los bloques
 static int du_vflag = 0; // Verbose, imprime el tamaño de todos
 static int du_tflag = 0; // Restriccion de tamaño
 static int size = 0;
+
 int du_aux(const char *fpath, const struct stat *sb,
             int tflag, struct FTW *ftwbuf){
-    
-    // Esto de aqui funciona perfecto si solo usas -v, pero
-    // si lo combinas con -t que tienes que descartar cositas no vale
-    // porque lo imprime aunque lo descartes y se lia parda.
-    // Podria funcionar meterlo dentro y aqui solo se imprime el nombre del directorio,
-    // aunque igualmente si no se imprime nada del directorio no habria que imprimir
-    // su nombre :thinking:
-    
     int discarded = 0;
     int sizethreshold = 0;
     if (du_tflag){
         sizethreshold = size;
+        // Comprobamos las restricciones del comando -t.
         if (S_ISREG(sb->st_mode) && !((sizethreshold > 0 && sb->st_size < sizethreshold)  
-                                 || (sizethreshold < 0 && sb->st_size > sizethreshold*-1)
-                                 || sizethreshold == 0)){
+            || (sizethreshold < 0 && sb->st_size > sizethreshold*-1)
+            || sizethreshold == 0)){
             discarded = 1;                                 
         }
     }
     
-    if (du_vflag && !discarded){
-        for (int i = 0; i < ftwbuf->level; i++) {
-            fprintf(stdout, "\t");
+    // Si no se ha descartado el fichero se imprime la información
+    // dependiendo de las opciones.
+    if (!discarded){
+        if (du_vflag){
+            for (int i = 0; i < ftwbuf->level; i++) {
+                fprintf(stdout, "\t");
+            }
+            fprintf(stdout, "%s", fpath);
         }
-        fprintf(stdout, "%s", fpath);
-    }
         
-    if (S_ISREG(sb->st_mode)){
-        /*int sizethreshold = 0;
-        if (du_tflag)
-            sizethreshold = size;  */
-        if (!discarded){
-                
-            // Estas dos if elses de aqui abajo dan un poco de sidote, mira
-            // ver si se hay alguna forma de reducirlos xD
-            
+        if (S_ISREG(sb->st_mode)){
             if (du_bflag)
                 totalSize += (sb->st_blocks*512);
             else 
@@ -315,21 +326,22 @@ int du_aux(const char *fpath, const struct stat *sb,
             else if (du_vflag)
                 fprintf(stdout, ": %zu\n", sb->st_size);
         }
+        else if(du_vflag)
+            fprintf(stdout, "\n");
     }
-    // Cosa nazi para meter los saltos de linea
-    else if(du_vflag)
-        fprintf(stdout, "\n");
     return 0; /* To tell nftw() to continue */
 }
 
-
+// Boletin 4, ejercicio 1 y opcional.
 void run_du(struct execcmd *ecmd){
     int opt;
     int cont = 0;
     int du_hflag = 0;
+    // Contamos el número de argumentos
     while (ecmd->argv[cont])
         cont++;
-     while ((opt = getopt(cont, ecmd->argv, "hbvt:")) != -1){
+    // Procesamos los parámetros
+    while ((opt = getopt(cont, ecmd->argv, "hbvt:")) != -1){
         switch (opt){
             case 'h':
                 du_hflag = 1;
@@ -342,6 +354,7 @@ void run_du(struct execcmd *ecmd){
                 break;
             case 't':
                 du_tflag = 1;
+                // Almacenamos el argumento de la opcion t
                 sscanf(optarg, "%d", &size);
                 break;
             case '?':
@@ -349,8 +362,9 @@ void run_du(struct execcmd *ecmd){
                 break;
         }
     }
+    // Si se encuentra la opción h o no se reconoce alguna de las que se introducen,
+    // se muestra la ayuda y se ignoran el resto de opciones.
     if (du_hflag){
-        
         fprintf(stdout, "Uso : du [-h] [- b] [ -t SIZE ] [-v ] [ FICHERO | DIRECTORIO ]\n"\
         "Para cada fichero, imprime su tamaño.\n"\
         "Para cada directorio, imprime la suma de los tamaños de todos los ficheros de\n"\
@@ -370,11 +384,15 @@ void run_du(struct execcmd *ecmd){
         int i = optind;
         do{
             char * path;
+            // Si no se pasan argumentos, la orden se aplica sobre
+            // el directorio actual.
             path = i < cont ? ecmd->argv[i] : ".";
             if (stat(path, &st) == -1) {
                 perror("stat");
                 exit(EXIT_FAILURE);
             }
+            // Si es un directorio, usamos nftw para recorrerlo recursivamente,
+            // nos ayudamos de la funcion auxiliar du_aux.
             if(S_ISDIR(st.st_mode)){
                 int flags = 0;
                 int nopenfd = 20;
@@ -385,14 +403,19 @@ void run_du(struct execcmd *ecmd){
                 }
                 fprintf(stdout,"(D) %s: %d\n", path, totalSize);
             }
+            // Si es un fichero, se calcula la información a mostrar en función
+            // de las opciones seleccionadas.
             else if (S_ISREG(st.st_mode)) {
                 int sizethreshold = 0;
                 if (du_tflag)
-                    sizethreshold = size;    
+                    sizethreshold = size;  
+                // Restricciones de tamaño con la opcion -t
                 if ((sizethreshold > 0 && st.st_size < sizethreshold) 
-                        || (sizethreshold < 0 && st.st_size > sizethreshold*-1)
-                        || sizethreshold == 0){
+                    || (sizethreshold < 0 && st.st_size > sizethreshold*-1)
+                    || sizethreshold == 0){
                     fprintf(stdout,"(F) ");
+                    // En función de la opción -b, imprimimos el tamaño ocupado 
+                    // en disco por todos los bloques, o su tamaño.
                     if (du_bflag)
                         fprintf(stdout, "%s: %zu\n", path, st.st_blocks*512);
                     else 
@@ -405,8 +428,8 @@ void run_du(struct execcmd *ecmd){
     exit(0);
 }
 
-// Ejecuta un `cmd`. Nunca retorna, ya que siempre se ejecuta en un
-// hijo lanzado con `fork()`.
+// Ejecuta un 'cmd'. Nunca retorna, ya que siempre se ejecuta en un
+// hijo lanzado con 'fork()'.
 void run_cmd(struct cmd *cmd){
     int p[2];
     struct backcmd *bcmd;
@@ -445,6 +468,8 @@ void run_cmd(struct cmd *cmd){
     case REDIR:
         rcmd = (struct redircmd*)cmd;
         close(rcmd->fd);
+        // Boletin 2, ejercicio 1. Añadimos los permisos para que los ficheros
+        // se creen con permisos 700.
         if (open(rcmd->file, rcmd->mode, S_IRWXU) < 0)
         {
             fprintf(stderr, "open %s failed\n", rcmd->file);
@@ -511,18 +536,20 @@ void run_cmd(struct cmd *cmd){
 char* getcmd() {
     char *buf;
     int retval = 0;
+    // Obtenemos el nombre de usuario a partir del uid.
 	char* username = getpwuid(getuid())->pw_name;
-	
 	if (username == NULL){
 		perror("getpwuid");
 		exit(EXIT_FAILURE);
 	}
 
+    // Obtenemos el path actual.
 	char path[MAXPATH];
 	if (getcwd(path, MAXPATH) == NULL){
 		perror("getcwd");
 		exit(EXIT_FAILURE);
 	}
+	// Boletin 2, ejercicio 2. Creamos el prompt quedandonos con el basename del path.
 	char prompt[MAXPATH];
 	snprintf(prompt, MAXPATH,"%s@%s$ ", username, basename(path));
 	
@@ -538,6 +565,7 @@ char* getcmd() {
 }
 
 static int count = 0;
+// Handler para SIGCHLD. Incrementa el contador.
 static void signal_handler(int sig){
     if (sig == SIGCHLD) {
         count ++;
@@ -546,6 +574,7 @@ static void signal_handler(int sig){
 }
 
 static int sigus_timeout = INITIAL_TIMEOUT;
+// Handler para incrementar o decrementar el timeout.
 static void sigus_handler(int sig){
     if (sig == SIGUSR1){
         sigus_timeout += 5;
@@ -561,21 +590,35 @@ static void sigus_handler(int sig){
 int main(void) {
     char* buf;
     
-    
+    // Creamos un set de señales
     sigset_t blocked_signals;
-    sigemptyset(&blocked_signals);
-    sigaddset(&blocked_signals, SIGINT);
-    sigaddset(&blocked_signals, SIGCHLD);
+    // Nos aseguramos de que está vacío.
+    if (sigemptyset(&blocked_signals) == -1){
+        perror("sigemptyset");
+        exit(EXIT_FAILURE);
+    }
+    // Añadimos SIGINT y SIGCHLD
+    if (sigaddset(&blocked_signals, SIGINT) == -1){
+        perror("sigaddset");
+        exit(EXIT_FAILURE);
+    }
+    if (sigaddset(&blocked_signals, SIGCHLD) == -1){
+        perror("sigaddset");
+        exit(EXIT_FAILURE);
+    }
+    // Bloqueamos las señales del set creado, es decir, bloqueamos SIGINT y SIGCHLD.
     if (sigprocmask(SIG_BLOCK, &blocked_signals, NULL) == -1){
         perror("sigprocmask");
         exit(EXIT_FAILURE);
     }
+    // Le asignamos el manejador signal_handler a SIGCHLD.
     struct sigaction sa;
     sa.sa_handler = signal_handler;
     if (sigaction(SIGCHLD, &sa, NULL) == -1){
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
+    //Le asignamos manejador a SIGUSR1 y SIGUSR2.
     struct sigaction sigusr;
     sigusr.sa_handler = sigus_handler;
     if (sigaction(SIGUSR1, &sigusr, NULL) == -1){
@@ -595,21 +638,36 @@ int main(void) {
         timeout.tv_sec = sigus_timeout;
         timeout.tv_nsec = 0;
         sigset_t sigc;
-        sigaddset(&sigc, SIGCHLD);
+        if (sigemptyset(&sigc) == -1){
+                perror("sigemptyset");
+                exit(EXIT_FAILURE);
+        }
+        if (sigaddset(&sigc, SIGCHLD) == -1){
+                perror("sigaddset");
+                exit(EXIT_FAILURE);
+        }
         siginfo_t info;
-        printf("timeout = %d\n", sigus_timeout);
+        // Parseamos el comando antes del bloque if else
         struct cmd* command = parse_cmd(buf);
+        // Boletin 2, ejercicio 4.
+        // Añadimos en los dos ifs siguientes la comprobación de NULL para
+        // evitar violación de segmento cuando el comando está vacío.
         if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "exit") == 0)
             exit(0);
+        // Boletin 2, ejercicio 5.
         else if ((((struct execcmd*)command)->argv[0] != NULL) && strcmp(((struct execcmd*)command)->argv[0], "cd") == 0)
             run_cd(command);
         // Crear siempre un hijo para ejecutar el comando leído
         else{
+            // Creamos el proceso hijo y guardamos su PID
             int pid = fork1();
+            // Si somos el hijo, ejecutamos el comando
             if(pid == 0)
                 run_cmd(command);
+            // Esperamos a que expire el timeout o a que se reciba la señal SIGCHLD.
             do{
                 if (sigtimedwait(&sigc, &info, &timeout) < 0) {
+                    // Si expira, matamos al proceso hijo.
                 	if (errno == EAGAIN) {
             			fprintf(stderr, "simplesh: [%d] Matado hijo con PID %d\n", count, pid);
             			kill (pid, SIGKILL);
@@ -622,18 +680,28 @@ int main(void) {
             			exit(EXIT_FAILURE);
                 	}
                 }
+                // Cuando se reciba la señal SIGCHLD o expire el timeout, salimos del bucle.
             	break;
             } while (1);
+            // Esperamos al proceso hijo.
             waitpid(pid, NULL, 0);
-        
-            sigset_t blocked_signals;
-            sigemptyset(&blocked_signals);
-            sigaddset(&blocked_signals, SIGCHLD);
-            if (sigprocmask(SIG_UNBLOCK, &blocked_signals, NULL) == -1){
+            
+            //Para asegurarnos de que se ejecuta el handler de SIGCHLD, desbloqueamos
+            //la señal y la volvemos a bloquear para que salga de la cola de pendientes.
+            sigset_t blocked;
+            if (sigemptyset(&blocked) == -1){
+                perror("sigemptyset");
+                exit(EXIT_FAILURE);
+            }
+            if (sigaddset(&blocked, SIGCHLD) == -1){
+                perror("sigaddset");
+                exit(EXIT_FAILURE);
+            }
+            if (sigprocmask(SIG_UNBLOCK, &blocked, NULL) == -1){
                 perror("sigprocmask");
                 exit(EXIT_FAILURE);
             }
-            if (sigprocmask(SIG_BLOCK, &blocked_signals, NULL) == -1){
+            if (sigprocmask(SIG_BLOCK, &blocked, NULL) == -1){
                 perror("sigprocmask");
                 exit(EXIT_FAILURE);
             }
@@ -930,6 +998,8 @@ parse_redirs(struct cmd *cmd, char **ps, char *end_of_str)
         case '<':
             cmd = redircmd(cmd, q, eq, O_RDONLY, 0);
             break;
+        // Boletin 2, ejercicio 1. Añadimos los flags para que la semántica de las
+        // redirecciones sea la misma que en bash.
         case '>':
             cmd = redircmd(cmd, q, eq, O_RDWR|O_CREAT|O_TRUNC, 1);
             break;
